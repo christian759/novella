@@ -1,6 +1,13 @@
 app = "novella"
 primary_region = "ord"
 
+[env]
+  DB_PATH = "/data/novella.db.json"
+
+[mounts]
+  source = "novella_data"
+  destination = "/data"
+
 [http_service]
   internal_port = 8080
   force_https = true

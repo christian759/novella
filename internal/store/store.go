@@ -21,7 +21,8 @@ var (
 )
 
 type Store struct {
-	mu sync.RWMutex
+	mu     sync.RWMutex
+	dbPath string
 
 	usersByID       map[int64]model.User
 	usersByEmail    map[string]int64
@@ -45,7 +46,13 @@ type Store struct {
 }
 
 func New() *Store {
-	return &Store{
+	s, _ := NewWithDB("")
+	return s
+}
+
+func NewWithDB(dbPath string) (*Store, error) {
+	s := &Store{
+		dbPath:            strings.TrimSpace(dbPath),
 		usersByID:         make(map[int64]model.User),
 		usersByEmail:      make(map[string]int64),
 		usersByUsername:   make(map[string]int64),
@@ -57,6 +64,13 @@ func New() *Store {
 		bookmarks:         make(map[string]model.Bookmark),
 		sessions:          make(map[string]int64),
 	}
+	if s.dbPath == "" {
+		return s, nil
+	}
+	if err := s.loadLocked(); err != nil {
+		return nil, err
+	}
+	return s, nil
 }
 
 func normalize(input string) string {
@@ -114,6 +128,9 @@ func (s *Store) Register(username, email, password string) (model.User, string, 
 		return model.User{}, "", err
 	}
 	s.sessions[token] = user.ID
+	if err := s.persistLocked(); err != nil {
+		return model.User{}, "", err
+	}
 	return user, token, nil
 }
 
@@ -134,6 +151,9 @@ func (s *Store) Login(email, password string) (model.User, string, error) {
 		return model.User{}, "", err
 	}
 	s.sessions[token] = user.ID
+	if err := s.persistLocked(); err != nil {
+		return model.User{}, "", err
+	}
 	return user, token, nil
 }
 
@@ -178,6 +198,9 @@ func (s *Store) CreateNovel(authorID int64, title, description, genre string, st
 		UpdatedAt:   now,
 	}
 	s.novelsByID[n.ID] = n
+	if err := s.persistLocked(); err != nil {
+		return model.Novel{}, err
+	}
 	return n, nil
 }
 
@@ -256,6 +279,9 @@ func (s *Store) UpdateNovel(id, requesterID int64, title, description, genre str
 	}
 	n.UpdatedAt = time.Now().UTC()
 	s.novelsByID[id] = n
+	if err := s.persistLocked(); err != nil {
+		return model.Novel{}, err
+	}
 	return n, nil
 }
 
@@ -283,6 +309,9 @@ func (s *Store) DeleteNovel(id, requesterID int64) error {
 		if b.NovelID == id {
 			delete(s.bookmarks, k)
 		}
+	}
+	if err := s.persistLocked(); err != nil {
+		return err
 	}
 	return nil
 }
@@ -319,6 +348,9 @@ func (s *Store) CreateChapter(novelID, requesterID int64, title, content string,
 	s.chapterIDsByNovel[novelID] = append(s.chapterIDsByNovel[novelID], ch.ID)
 	n.UpdatedAt = now
 	s.novelsByID[novelID] = n
+	if err := s.persistLocked(); err != nil {
+		return model.Chapter{}, err
+	}
 	return ch, nil
 }
 
@@ -382,6 +414,9 @@ func (s *Store) UpdateChapter(novelID, chapterID, requesterID int64, title, cont
 	s.chaptersByID[chapterID] = ch
 	n.UpdatedAt = ch.UpdatedAt
 	s.novelsByID[novelID] = n
+	if err := s.persistLocked(); err != nil {
+		return model.Chapter{}, err
+	}
 	return ch, nil
 }
 
@@ -414,6 +449,9 @@ func (s *Store) DeleteChapter(novelID, chapterID, requesterID int64) error {
 			b.ChapterPos = nil
 			s.bookmarks[k] = b
 		}
+	}
+	if err := s.persistLocked(); err != nil {
+		return err
 	}
 	return nil
 }
@@ -449,6 +487,9 @@ func (s *Store) CreateComment(novelID int64, chapterID *int64, userID int64, bod
 	}
 	s.commentsByID[cm.ID] = cm
 	s.commentIDsByNovel[novelID] = append(s.commentIDsByNovel[novelID], cm.ID)
+	if err := s.persistLocked(); err != nil {
+		return model.Comment{}, err
+	}
 	return cm, nil
 }
 
@@ -509,6 +550,9 @@ func (s *Store) UpsertBookmark(userID, novelID int64, chapterID *int64) (model.B
 		ChapterPos: pos,
 	}
 	s.bookmarks[bookmarkKey(userID, novelID)] = b
+	if err := s.persistLocked(); err != nil {
+		return model.Bookmark{}, err
+	}
 	return b, nil
 }
 

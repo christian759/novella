@@ -14,12 +14,19 @@ func main() {
 	if port == "" {
 		port = "8080"
 	}
+	dbPath := os.Getenv("DB_PATH")
+	if dbPath == "" {
+		dbPath = "./data/novella.db.json"
+	}
 
-	s := store.New()
+	s, err := store.NewWithDB(dbPath)
+	if err != nil {
+		log.Fatalf("failed to initialize store: %v", err)
+	}
 	server := api.New(s)
 
 	addr := ":" + port
-	log.Printf("novella backend listening on %s", addr)
+	log.Printf("novella backend listening on %s (db: %s)", addr, dbPath)
 	if err := http.ListenAndServe(addr, server.Routes()); err != nil {
 		log.Fatal(err)
 	}
